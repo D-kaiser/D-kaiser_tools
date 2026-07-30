@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""交互式图片格式转换工具：PNG/JPG/WebP/AVIF 互转，成功后删除原图。（多线程+防刷屏版）"""
+"""交互式图片格式转换工具：PNG/JPG/WebP/AVIF 互转，成功后删除原图。（多线程+防刷屏版）
+目标目录：/storage/emulated/0/termux
+"""
 
 import sys
 import shutil
@@ -198,6 +200,12 @@ def _process_one(src_path: Path, dst_path: Path, src_fmt: dict, dst_fmt: dict) -
 
 
 def main():
+    # 固定目标目录
+    TARGET_DIR = Path("/storage/emulated/0/termux")
+    if not TARGET_DIR.is_dir():
+        print(f"❌ 目标目录不存在: {TARGET_DIR}")
+        sys.exit(1)
+
     if AVIF_AVAILABLE:
         method_desc = {
             "builtin": "Pillow 内置 AvifImagePlugin",
@@ -223,11 +231,11 @@ def main():
     src_fmt = FORMAT_MAP[src_choice]
     dst_fmt = FORMAT_MAP[dst_choice]
 
-    # 3. 扫描文件
-    directory = Path(".")
+    # 3. 扫描固定目录下的文件
+    directory = TARGET_DIR
     files = collect_files(directory, src_fmt["ext"])
     if not files:
-        print(f"⚠️  当前目录及子目录下未找到任何 {src_fmt['label']} 文件")
+        print(f"⚠️  目录 {directory} 及其子目录下未找到任何 {src_fmt['label']} 文件")
         return
 
     print(f"\n🔄 {src_fmt['label']} → {dst_fmt['label']} | 共 {len(files)} 张 | "
