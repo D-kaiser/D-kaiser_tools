@@ -1,6 +1,19 @@
 import sys
 import os
 
+# 固定的工作根目录
+ROOT_DIR = "/storage/emulated/0/termux"
+
+def resolve_path(path: str) -> str:
+    """
+    如果路径是相对路径，则相对于 ROOT_DIR 返回绝对路径；
+    如果已经是绝对路径，则直接返回（但仍建议放在根目录下）。
+    """
+    if os.path.isabs(path):
+        return path
+    return os.path.join(ROOT_DIR, path)
+
+
 def xor_file(input_file, output_file, key=0x84):
     """
     对文件进行 XOR 加密/解密（同一操作）
@@ -31,15 +44,19 @@ def xor_file(input_file, output_file, key=0x84):
         print(f"写入文件时出错：{e}")
         return False
 
+
 def get_input_file(prompt, default):
     """获取用户输入的文件路径，如果直接回车则返回默认值"""
     user_input = input(prompt).strip()
     return user_input if user_input else default
 
+
 def main():
     print("=" * 40)
     print("NScripter 脚本工具 (密钥 0x84)")
     print("=" * 40)
+    print(f"工作根目录：{ROOT_DIR}")
+    print("所有相对路径将基于此目录解析。")
     print("请选择操作：")
     print(" [1] 解密 nscript.dat → nscript_decoded.txt")
     print(" [2] 加密为 nscript.dat (从文本文件)")
@@ -53,8 +70,11 @@ def main():
         return
     elif choice == '1':
         # 解密模式
-        default_input = "nscript.dat"
-        input_file = get_input_file(f"请输入要解密的文件 (默认 {default_input}): ", default_input)
+        default_input = resolve_path("nscript.dat")
+        prompt = f"请输入要解密的文件 (默认 {default_input}): "
+        input_file = get_input_file(prompt, default_input)
+        input_file = resolve_path(input_file)          # 确保基于根目录
+
         # 自动生成输出文件名
         base, ext = os.path.splitext(input_file)
         output_file = f"{base}_decoded.txt"
@@ -62,9 +82,11 @@ def main():
         xor_file(input_file, output_file)
     elif choice == '2':
         # 加密模式
-        default_input = "nscript_decoded.txt"
-        input_file = get_input_file(f"请输入要加密的文本文件 (默认 {default_input}): ", default_input)
-        # 自动生成输出文件名
+        default_input = resolve_path("nscript_decoded.txt")
+        prompt = f"请输入要加密的文本文件 (默认 {default_input}): "
+        input_file = get_input_file(prompt, default_input)
+        input_file = resolve_path(input_file)
+
         base, ext = os.path.splitext(input_file)
         if ext.lower() == '.txt':
             output_file = base + '.dat'
@@ -74,6 +96,7 @@ def main():
         xor_file(input_file, output_file)
     else:
         print("无效的选择，请重新运行程序。")
+
 
 if __name__ == "__main__":
     main()

@@ -1,6 +1,9 @@
 import os
 from pathlib import Path
 
+# 固定的工作根目录
+BASE_DIR = "/storage/emulated/0/termux"
+
 def index_to_5letter(idx):
     """
     将数字索引转换为5位字母组合 (a=0, b=1 ... z=25)
@@ -69,7 +72,7 @@ def process_directory(base_dir, dry_run=True):
     return total
 
 def main():
-    base_dir = Path(__file__).parent.resolve()
+    base_dir = BASE_DIR
 
     print("=" * 55)
     print("🚀 批量文件重命名工具")
@@ -77,6 +80,12 @@ def main():
     print("=" * 55)
     print(f"📂 目标目录:\n   {base_dir}")
     print("-" * 55)
+
+    # 检查目标目录是否存在
+    if not os.path.isdir(base_dir):
+        print(f"❌ 错误：目标目录不存在或无法访问 -> {base_dir}")
+        input("\n按回车键退出...")
+        return
 
     print("🔎 正在扫描并生成预览...\n")
     total = process_directory(base_dir, dry_run=True)

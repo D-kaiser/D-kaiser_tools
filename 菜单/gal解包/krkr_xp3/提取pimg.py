@@ -4,6 +4,9 @@ from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 
+# 固定的工作根目录
+ROOT_DIR = "/storage/emulated/0/termux"
+
 def process_one_pimg(pimg_path):
     """
     处理单个 .pimg 文件：
@@ -48,8 +51,11 @@ def process_one_pimg(pimg_path):
 
 
 def find_pimg_files(root_dir):
-    """查找当前目录及一级子目录下的所有 .pimg 文件（不区分大小写）"""
+    """查找指定目录及一级子目录下的所有 .pimg 文件（不区分大小写）"""
     root = Path(root_dir)
+    if not root.exists():
+        print(f"目录不存在: {root_dir}")
+        return []
     files = []
     files.extend(root.glob("*.pimg"))
     files.extend(root.glob("*.PIMG"))
@@ -62,12 +68,17 @@ def find_pimg_files(root_dir):
 
 
 def main():
-    pimg_files = find_pimg_files(".")
-    if not pimg_files:
-        print("未找到任何 .pimg 文件")
+    # 检查根目录是否存在
+    if not os.path.isdir(ROOT_DIR):
+        print(f"错误：根目录不存在或不可访问 -> {ROOT_DIR}")
         return
 
-    print(f"找到 {len(pimg_files)} 个 .pimg 文件，开始提取（8核并行）...")
+    pimg_files = find_pimg_files(ROOT_DIR)
+    if not pimg_files:
+        print(f"在 {ROOT_DIR} 及其子目录中未找到任何 .pimg 文件")
+        return
+
+    print(f"在 {ROOT_DIR} 中找到 {len(pimg_files)} 个 .pimg 文件，开始提取（8核并行）...")
     total_images = 0
 
     # 使用进程池并行处理（最多 8 个进程）

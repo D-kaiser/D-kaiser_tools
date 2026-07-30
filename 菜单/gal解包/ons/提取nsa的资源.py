@@ -4,6 +4,9 @@ import struct
 import sys
 import glob
 
+# 固定的工作根目录
+ROOT_DIR = "/storage/emulated/0/termux"
+
 # 尝试导入PIL用于验证
 try:
     from PIL import Image
@@ -13,6 +16,14 @@ except ImportError:
     HAS_PIL = False
     print("提示: 未安装Pillow，将使用基础验证，可能不够准确。")
 
+
+def resolve_path(path: str) -> str:
+    """如果路径是相对路径，则相对于 ROOT_DIR 返回绝对路径；否则直接返回"""
+    if os.path.isabs(path):
+        return path
+    return os.path.join(ROOT_DIR, path)
+
+
 # -------------------- 文件名清理函数 --------------------
 def sanitize_filename(name):
     name = re.sub(r'[\\/*?:"<>|]', '_', name)
@@ -21,6 +32,7 @@ def sanitize_filename(name):
     if not name:
         return "unnamed"
     return name
+
 
 # -------------------- PNG 提取（每个文件后加处理进度） --------------------
 def extract_pngs(input_file, output_dir='output_png', file_prefix=''):
@@ -80,6 +92,7 @@ def extract_pngs(input_file, output_dir='output_png', file_prefix=''):
 
         percent = idx * 100 // total
         print(f"已保存: {output_path}处理进度: {idx}/{total} [{percent}%]...")
+
 
 # -------------------- OGG 提取（每个文件后加处理进度） --------------------
 def extract_oggs(input_file, output_dir='output_ogg', file_prefix=''):
@@ -198,6 +211,7 @@ def extract_oggs(input_file, output_dir='output_ogg', file_prefix=''):
 
     print(f"{input_file}: 提取完成，共保存 {saved_count} 个OGG文件。")
 
+
 # -------------------- 增强版 JPEG 提取（每个文件后加处理进度） --------------------
 def extract_jpegs(input_file, output_dir='output_jpg', file_prefix=''):
     os.makedirs(output_dir, exist_ok=True)
@@ -276,15 +290,24 @@ def extract_jpegs(input_file, output_dir='output_jpg', file_prefix=''):
 
     print(f"{file_prefix}: 提取完成，共保存 {saved_count} 张图片。")
 
+
 # -------------------- 主程序 --------------------
 if __name__ == '__main__':
+    # 检查根目录是否存在
+    if not os.path.isdir(ROOT_DIR):
+        print(f"错误：工作根目录不存在或无法访问 -> {ROOT_DIR}")
+        sys.exit(1)
+
     if len(sys.argv) > 1:
-        file_list = sys.argv[1:]
+        # 用户通过命令行指定的文件，将它们解析到根目录下
+        file_list = [resolve_path(f) for f in sys.argv[1:]]
         print(f"将处理指定的文件: {file_list}")
     else:
-        file_list = sorted(glob.glob('arc*.nsa'))
+        # 在根目录下搜索 arc*.nsa
+        search_pattern = os.path.join(ROOT_DIR, 'arc*.nsa')
+        file_list = sorted(glob.glob(search_pattern))
         if not file_list:
-            print("未找到任何 arc*.nsa 文件，请确保文件存在或指定文件名。")
+            print(f"在 {ROOT_DIR} 下未找到任何 arc*.nsa 文件，请确保文件存在或指定文件名。")
             sys.exit(1)
         print(f"自动匹配到文件: {file_list}")
 
@@ -303,11 +326,12 @@ if __name__ == '__main__':
         base = os.path.splitext(os.path.basename(file_name))[0]
         print(f"\n====== 处理文件: {file_name} ======")
 
+        # 输出目录也放到根目录下
         if choice == '0' or choice == '1':
-            extract_jpegs(file_name, output_dir='output_jpg', file_prefix=base)
+            extract_jpegs(file_name, output_dir=os.path.join(ROOT_DIR, 'output_jpg'), file_prefix=base)
         if choice == '0' or choice == '2':
-            extract_pngs(file_name, output_dir='output_png', file_prefix=base)
+            extract_pngs(file_name, output_dir=os.path.join(ROOT_DIR, 'output_png'), file_prefix=base)
         if choice == '0' or choice == '3':
-            extract_oggs(file_name, output_dir='output_ogg', file_prefix=base)
+            extract_oggs(file_name, output_dir=os.path.join(ROOT_DIR, 'output_ogg'), file_prefix=base)
 
     print("\n所有文件处理完毕。")

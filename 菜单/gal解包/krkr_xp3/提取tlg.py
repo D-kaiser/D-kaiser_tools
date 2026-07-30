@@ -1,6 +1,7 @@
 # extract_tlg.py
 # 从 .tlg（及指定扩展名）文件中提取 RIFF....WEBP 图片
 # 默认提取后删除原文件，加 --keep 可保留
+# 工作根目录固定为 /storage/emulated/0/termux/
 
 import os
 import sys
@@ -12,6 +13,9 @@ try:
     HAS_TQDM = True
 except ImportError:
     HAS_TQDM = False
+
+# 固定的工作根目录
+ROOT_DIR = "/storage/emulated/0/termux"
 
 
 def simple_progress(iterable, desc="处理中"):
@@ -149,15 +153,20 @@ def main():
         for e in args.ext
     )
 
-    # 收集所有匹配的文件
+    # 检查根目录是否存在
+    if not os.path.isdir(ROOT_DIR):
+        print(f"错误：工作根目录不存在或无法访问 -> {ROOT_DIR}")
+        sys.exit(1)
+
+    # 收集所有匹配的文件（从根目录递归搜索）
     files = []
-    for dirpath, _, filenames in os.walk(os.getcwd()):
+    for dirpath, _, filenames in os.walk(ROOT_DIR):
         for fname in filenames:
             if fname.lower().endswith(exts):
                 files.append(os.path.join(dirpath, fname))
 
     if not files:
-        print("未找到需要处理的文件。")
+        print(f"在 {ROOT_DIR} 及其子目录中未找到需要处理的文件。")
         return
 
     total_files = len(files)

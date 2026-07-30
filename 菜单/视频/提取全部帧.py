@@ -4,8 +4,9 @@ import sys
 import re
 
 # ====== 配置区域 ======
-search_path = os.getcwd()           # 默认搜索当前目录，可改为绝对路径如 '/sdcard/DCIM/Camera'
-output_base = 'output_png'           # 输出根文件夹
+ROOT_DIR = "/storage/emulated/0/termux"  # 工作根目录
+search_path = ROOT_DIR                   # 视频搜索路径
+output_base = os.path.join(ROOT_DIR, 'output_png')  # 输出根文件夹
 video_extensions = ('.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv', '.3gp', '.m4v')
 # =====================
 
@@ -99,6 +100,11 @@ def extract_frames(video_path, output_dir):
 def main():
     if not check_ffmpeg():
         print("❌ ffmpeg 或 ffprobe 未安装或无法运行，请先安装 FFmpeg")
+        return
+
+    # 检查根目录是否存在
+    if not os.path.isdir(ROOT_DIR):
+        print(f"❌ 工作根目录不存在或无法访问: {ROOT_DIR}")
         return
 
     videos = find_video_files(search_path)

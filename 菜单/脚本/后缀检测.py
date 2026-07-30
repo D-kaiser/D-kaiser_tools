@@ -10,6 +10,9 @@ import sys
 import argparse
 from pathlib import Path
 
+# 固定的工作根目录
+ROOT_DIR = "/storage/emulated/0/termux"
+
 # ============================================================
 # 文件签名数据库 (按头部长度从长到短排列，优先匹配更精确的签名)
 # 格式: (hex_signature, offset, extension)
@@ -199,8 +202,8 @@ def main():
     parser.add_argument(
         "directory",
         nargs="?",
-        default=".",
-        help="要扫描的目录路径 (默认: 当前目录)"
+        default=ROOT_DIR,
+        help=f"要扫描的目录路径 (默认: {ROOT_DIR})"
     )
     parser.add_argument(
         "--dry-run", "-n",
@@ -215,7 +218,17 @@ def main():
 
     args = parser.parse_args()
 
-    target = Path(args.directory).resolve()
+    # 检查根目录是否存在
+    if not os.path.isdir(ROOT_DIR):
+        print(f"[错误] 工作根目录不存在或无法访问: {ROOT_DIR}")
+        sys.exit(1)
+
+    # 解析目标目录：相对路径基于 ROOT_DIR
+    if os.path.isabs(args.directory):
+        target = Path(args.directory).resolve()
+    else:
+        target = (Path(ROOT_DIR) / args.directory).resolve()
+
     if not target.is_dir():
         print(f"[错误] 路径不存在或不是目录: {target}")
         sys.exit(1)

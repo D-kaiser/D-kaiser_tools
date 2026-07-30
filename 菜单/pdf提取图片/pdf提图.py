@@ -25,6 +25,9 @@ import shutil
 import re
 from pathlib import Path
 
+# 固定的工作根目录
+ROOT_DIR = "/storage/emulated/0/termux"
+
 try:
     from tqdm import tqdm
 except ImportError:
@@ -45,6 +48,15 @@ def check_pdfimages():
         tqdm.write("  Linux:  sudo apt install poppler-utils")
         tqdm.write("  macOS:  brew install poppler")
         sys.exit(1)
+
+def resolve_path(path: str) -> str:
+    """
+    将给定路径转换为基于 ROOT_DIR 的绝对路径。
+    如果已经是绝对路径，则直接返回；否则相对于 ROOT_DIR 解析。
+    """
+    if os.path.isabs(path):
+        return path
+    return os.path.join(ROOT_DIR, path)
 
 def count_images_in_pdf(pdf_path):
     """
@@ -231,15 +243,24 @@ def main():
     parser.add_argument("--no-png", action="store_true", help="禁用 PNG 转换，保留提取的原始格式")
     args = parser.parse_args()
 
+    # 检查根目录是否存在
+    if not os.path.isdir(ROOT_DIR):
+        tqdm.write(f"错误：工作根目录不存在或无法访问 -> {ROOT_DIR}")
+        sys.exit(1)
+
     check_pdfimages()
 
-    input_path = Path(args.input)
+    # 将输入和输出路径转换到根目录下（如果它们是相对路径）
+    input_arg = resolve_path(args.input)
+    output_arg = resolve_path(args.output)
+
+    input_path = Path(input_arg)
     if input_path.is_file():
         # 单个 PDF 文件，不显示主进度条
         if input_path.suffix.lower() == ".pdf":
             extract_images_from_pdf(
                 input_path,
-                args.output,
+                output_arg,
                 use_jpeg=(not args.no_jpeg if args.no_jpeg else None),
                 to_png=not args.no_png
             )
@@ -282,15 +303,13 @@ def main():
         for pdf in pdf_files:
             extracted = extract_images_from_pdf(
                 pdf,
-                args.output,
+                output_arg,
                 use_jpeg=(not args.no_jpeg if args.no_jpeg else None),
                 to_png=not args.no_png
             )
             if use_file_count:
                 pbar.update(1)
             else:
-                # 更新主进度条时使用实际提取的图片数（可能因 PDF 无图片而少于预统计数，但预统计可能不准，我们以实际提取为准）
-                # 注意：extracted 是提取的图片数，如果 PDF 中无图片则返回 0，预统计可能也是 0，一致
                 pbar.update(extracted)
         pbar.close()
         tqdm.write("\n全部处理完成！")

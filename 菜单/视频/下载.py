@@ -8,6 +8,9 @@ import uuid
 import os
 import re
 
+# 固定的工作根目录
+ROOT_DIR = "/storage/emulated/0/termux"
+
 def check_yt_dlp():
     """检查系统是否安装了 yt-dlp"""
     try:
@@ -90,6 +93,11 @@ def main():
         print("安装方法：pip install yt-dlp 或参考 https://github.com/yt-dlp/yt-dlp")
         sys.exit(1)
 
+    # 检查根目录是否存在
+    if not os.path.isdir(ROOT_DIR):
+        print(f"错误：工作根目录不存在或无法访问 -> {ROOT_DIR}")
+        sys.exit(1)
+
     # 获取用户输入的 URL
     url = input("URL=").strip()
     if not url:
@@ -99,16 +107,19 @@ def main():
     # 尝试获取视频标题
     title = get_video_title(url)
     if title:
-        filename_template = f"{title}.%(ext)s"
+        filename = f"{title}.%(ext)s"
         print(f"使用视频标题作为文件名：{title}")
     else:
         # 生成随机字符串（UUID 的十六进制表示）
         random_str = uuid.uuid4().hex
-        filename_template = f"video_{random_str}.%(ext)s"
+        filename = f"video_{random_str}.%(ext)s"
         print(f"无法获取标题，使用随机文件名：video_{random_str}")
 
+    # 组合为根目录下的绝对路径
+    output_template = os.path.join(ROOT_DIR, filename)
+
     # 执行下载
-    download_video(url, filename_template)
+    download_video(url, output_template)
 
 if __name__ == "__main__":
     main()
