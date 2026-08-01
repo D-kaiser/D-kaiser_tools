@@ -17,6 +17,7 @@ apt update
 apt install mpv -y
 apt install ffplay -y
 apt install ffmpeg -y
+apt install vlc -y
 apt install python -y
 apt install curl -y
 apt install git -y

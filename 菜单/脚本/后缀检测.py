@@ -1,21 +1,26 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-自动检测无后缀文件类型并重命名
-依据文件头部十六进制魔数(Magic Number)进行识别
+文件后缀自动纠正工具
+- 无后缀文件：识别类型并添加扩展名
+- 有后缀文件：识别实际类型，若与当前后缀不符则修正
+- 将全部修改记录写入日志文件
 """
 
 import os
 import sys
 import argparse
 from pathlib import Path
+from datetime import datetime
 
 # 固定的工作根目录
 ROOT_DIR = "/storage/emulated/0/termux"
 
+# 日志文件路径（默认存放在工作根目录下）
+LOG_FILE = str(Path(ROOT_DIR) / "rename_log.txt")
+
 # ============================================================
-# 文件签名数据库 (按头部长度从长到短排列，优先匹配更精确的签名)
-# 格式: (hex_signature, offset, extension)
+# 文件签名数据库
 # ============================================================
 FILE_SIGNATURES = [
     # 图片格式
@@ -66,9 +71,12 @@ FILE_SIGNATURES = [
     ("3026B2758E66CF11", 0, ".wmv"),       # WMV/WMA
 ]
 
+# 基于ZIP格式但不应被改为 .zip 的常用扩展名
+ZIP_BASED_EXTS = {".docx", ".xlsx", ".pptx", ".jar", ".apk", ".ods", ".odt", ".ott", ".odp", ".odg"}
+
 
 def build_signature_tree():
-    """构建签名查找表，提高匹配效率"""
+    """构建签名查找表"""
     sigs = []
     for hex_sig, offset, ext in FILE_SIGNATURES:
         try:
@@ -76,7 +84,7 @@ def build_signature_tree():
             sigs.append((byte_sig, offset, ext))
         except ValueError as e:
             print(f"[警告] 无效签名 '{hex_sig}': {e}")
-    # 按 (offset + len) 降序排列，确保更长/更精确的签名优先匹配
+    # 按 (offset + len) 降序排列，更长/更精确的签名优先
     sigs.sort(key=lambda x: x[1] + len(x[0]), reverse=True)
     return sigs
 
@@ -85,10 +93,7 @@ SIGNATURES = build_signature_tree()
 
 
 def detect_file_type(filepath: str, read_size: int = 512) -> str | None:
-    """
-    通过读取文件头部字节，匹配魔数来检测文件类型
-    返回扩展名(如 '.png')或 None
-    """
+    """通过读取文件头部字节检测真实文件类型，返回扩展名或 None"""
     try:
         with open(filepath, 'rb') as f:
             header = f.read(read_size)
@@ -102,27 +107,25 @@ def detect_file_type(filepath: str, read_size: int = 512) -> str | None:
     for byte_sig, offset, ext in SIGNATURES:
         end = offset + len(byte_sig)
         if len(header) >= end and header[offset:end] == byte_sig:
-            # 特殊二次检查
+            # 需要二次检查的容器格式
             if ext == ".webp_check":
-                # RIFF????WEBP
-                if len(header) >= 12 and header[8:12] == b'WEBP':
-                    return ".webp"
-                elif len(header) >= 12 and header[8:12] == b'AVI ':
-                    return ".avi"
-                elif len(header) >= 12 and header[8:12] == b'WAVE':
-                    return ".wav"
+                if len(header) >= 12:
+                    subtype = header[8:12]
+                    if subtype == b'WEBP':
+                        return ".webp"
+                    elif subtype == b'AVI ':
+                        return ".avi"
+                    elif subtype == b'WAVE':
+                        return ".wav"
                 continue
             if ext == ".wav_check":
                 if len(header) >= 12 and header[8:12] == b'WAVE':
                     return ".wav"
                 continue
             if ext == ".zip_check":
-                # PK\x03\x04 可能是 zip/docx/xlsx/apk 等
-                # 简单策略：统一标记为 .zip，用户可后续手动区分 Office 文件
-                # 如需区分 docx/xlsx，可进一步解析 ZIP 内部结构
+                # ZIP 格式，但我们只返回 .zip，具体修正逻辑放在主程序里处理
                 return ".zip"
             return ext
-
     return None
 
 
@@ -133,16 +136,26 @@ def safe_rename(src: Path, ext: str) -> Path:
         return dst
     counter = 1
     while True:
-        dst = src.parent / f"{src.name}_{counter}{ext}"
+        dst = src.parent / f"{src.stem}_{counter}{ext}"
         if not dst.exists():
             return dst
         counter += 1
 
 
-def scan_and_rename(root_dir: str, dry_run: bool = False, recursive: bool = True):
-    """扫描目录并重命名无后缀文件"""
+def log_change(log_entries: list, timestamp: str, old: Path, new: Path, reason: str):
+    """将一次修改记录添加到日志列表"""
+    entry = f"{timestamp} | {old} → {new} | {reason}"
+    log_entries.append(entry)
+    print(f"  {reason}: {old.name} → {new.name}")
+
+
+def scan_and_correct(root_dir: str, dry_run: bool = False, recursive: bool = True,
+                     log_file: str = LOG_FILE):
+    """扫描目录，纠正文件后缀，并输出日志"""
     root = Path(root_dir).resolve()
-    stats = {"scanned": 0, "renamed": 0, "skipped": 0, "unknown": 0, "errors": 0}
+    stats = {"scanned": 0, "fixed": 0, "skipped": 0, "errors": 0}
+    log_entries = []   # 存放所有修改记录
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     iterator = root.rglob("*") if recursive else root.glob("*")
 
@@ -151,44 +164,73 @@ def scan_and_rename(root_dir: str, dry_run: bool = False, recursive: bool = True
             continue
 
         stats["scanned"] += 1
+        current_suffix = filepath.suffix.lower()
+        detected_ext = detect_file_type(str(filepath))
 
-        # 跳过已有后缀的文件
-        if filepath.suffix:
+        # 情况1：无法识别类型，跳过
+        if detected_ext is None:
             stats["skipped"] += 1
             continue
 
-        # 检测文件类型
-        ext = detect_file_type(str(filepath))
+        # 判断是否需要修改
+        need_rename = False
+        reason = ""
 
-        if ext is None:
-            stats["unknown"] += 1
-            print(f"  [未知] {filepath.relative_to(root)}")
-            continue
-
-        # 执行重命名
-        new_path = safe_rename(filepath, ext)
-        rel_old = filepath.relative_to(root)
-        rel_new = new_path.relative_to(root)
-
-        if dry_run:
-            print(f"  [预览] {rel_old} → {rel_new}")
+        if not current_suffix:
+            # 无后缀，添加检测到的扩展名
+            need_rename = True
+            reason = "添加后缀"
         else:
-            try:
-                filepath.rename(new_path)
-                print(f"  [完成] {rel_old} → {rel_new}")
-                stats["renamed"] += 1
-            except OSError as e:
-                print(f"  [失败] {rel_old}: {e}")
-                stats["errors"] += 1
+            # 有后缀，检查是否与检测类型一致
+            if current_suffix == detected_ext:
+                stats["skipped"] += 1
                 continue
 
-    # 打印统计
+            # 特殊处理：检测为 .zip 但原始后缀是已知的 ZIP 系格式（如 .docx）
+            if detected_ext == ".zip" and current_suffix in ZIP_BASED_EXTS:
+                stats["skipped"] += 1
+                continue
+
+            # 其他不匹配情况，修正后缀
+            need_rename = True
+            reason = f"纠正后缀 ({current_suffix} → {detected_ext})"
+
+        if need_rename:
+            new_path = safe_rename(filepath, detected_ext)
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            if not dry_run:
+                try:
+                    filepath.rename(new_path)
+                    log_change(log_entries, timestamp, filepath, new_path, reason)
+                    stats["fixed"] += 1
+                except OSError as e:
+                    print(f"  [失败] {filepath.name}: {e}")
+                    stats["errors"] += 1
+            else:
+                log_change(log_entries, timestamp, filepath, new_path, reason)
+                stats["fixed"] += 1  # 预览模式也计入
+
+    # 写入日志文件
+    if log_entries:
+        log_header = f"文件后缀纠正日志 - {now_str}\n" + "=" * 60
+        log_content = "\n".join([log_header] + log_entries + ["=" * 60])
+        if not dry_run:
+            try:
+                with open(log_file, "a", encoding="utf-8") as f:
+                    f.write(log_content + "\n\n")
+                print(f"\n📄 日志已写入: {log_file}")
+            except IOError as e:
+                print(f"\n[错误] 无法写入日志文件: {e}")
+        else:
+            print("\n[预览模式] 不会写入日志文件，以下为将要记录的内容：")
+            print(log_content)
+
+    # 统计输出
     print("\n" + "=" * 50)
-    print(f"📊 统计结果:")
+    print("📊 统计结果:")
     print(f"   扫描文件: {stats['scanned']}")
-    print(f"   成功重命名: {stats['renamed']}")
-    print(f"   跳过(已有后缀): {stats['skipped']}")
-    print(f"   未识别类型: {stats['unknown']}")
+    print(f"   修正/添加: {stats['fixed']}")
+    print(f"   跳过(正确/无法识别): {stats['skipped']}")
     print(f"   错误: {stats['errors']}")
     if dry_run:
         print("   ⚠️  以上为预览模式，未实际修改任何文件")
@@ -197,7 +239,7 @@ def scan_and_rename(root_dir: str, dry_run: bool = False, recursive: bool = True
 
 def main():
     parser = argparse.ArgumentParser(
-        description="根据文件头魔数自动检测无后缀文件类型并添加扩展名"
+        description="根据文件头魔数自动纠正文件后缀（添加或修正）"
     )
     parser.add_argument(
         "directory",
@@ -215,15 +257,20 @@ def main():
         action="store_true",
         help="不递归扫描子目录"
     )
+    parser.add_argument(
+        "--log", "-l",
+        default=LOG_FILE,
+        help=f"日志文件路径 (默认: {LOG_FILE})"
+    )
 
     args = parser.parse_args()
 
-    # 检查根目录是否存在
+    # 检查根目录
     if not os.path.isdir(ROOT_DIR):
         print(f"[错误] 工作根目录不存在或无法访问: {ROOT_DIR}")
         sys.exit(1)
 
-    # 解析目标目录：相对路径基于 ROOT_DIR
+    # 解析目标目录
     if os.path.isabs(args.directory):
         target = Path(args.directory).resolve()
     else:
@@ -235,15 +282,17 @@ def main():
 
     mode = "预览模式" if args.dry_run else "执行模式"
     recurse = "递归" if not args.no_recursive else "仅当前目录"
-    print(f"🔍 自动文件类型检测与重命名工具")
+    print("🔍 文件后缀自动纠正工具")
     print(f"   目录: {target}")
     print(f"   模式: {mode} | {recurse}")
+    print(f"   日志: {args.log}")
     print("-" * 50)
 
-    scan_and_rename(
+    scan_and_correct(
         str(target),
         dry_run=args.dry_run,
-        recursive=not args.no_recursive
+        recursive=not args.no_recursive,
+        log_file=args.log
     )
 
 
