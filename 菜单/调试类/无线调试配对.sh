@@ -1,5 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# 无线调试配对 + 连接脚本（自动读取配置）
+# 无线调试配对 + 连接脚本（自动读取配置并更新连接端口）
 # 配置文件：~/D-kaiser_tools/dk配置.conf
 # 配置内容示例：
 # 局域网ip="192.168.0.100"
@@ -27,14 +27,21 @@ if [ -z "$target_ip" ]; then
   exit 1
 fi
 
-# 读取无线调试连接端口
-connect_port=$(grep -E '^\s*无线调试连接端口\s*=\s*"' "$CONF_FILE" | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
-if [ -z "$connect_port" ]; then
-  echo "错误：配置文件中未找到 '无线调试连接端口' 或格式不正确"
+echo "配置读取成功：目标设备 IP = $target_ip"
+
+# 询问无线调试连接端口并写入配置
+echo -n "请输入无线调试连接端口: "
+read connect_port
+if ! [[ "$connect_port" =~ ^[0-9]+$ ]]; then
+  echo "错误：端口必须为数字"
   exit 1
 fi
 
-echo "配置读取成功：目标设备 IP = $target_ip，连接端口 = $connect_port"
+# 更新配置文件中的连接端口（替换原有值）
+sed -i 's/^\s*无线调试连接端口\s*=\s*".*"/无线调试连接端口="'"$connect_port"'"/' "$CONF_FILE"
+if [ $? -ne 0 ]; then
+  echo "警告：更新配置文件失败，但将继续执行"
+fi
 
 # 输入配对端口
 echo -n "请输入无线调试配对端口: "
@@ -44,10 +51,9 @@ if ! [[ "$pair_port" =~ ^[0-9]+$ ]]; then
   exit 1
 fi
 
-# 隐藏输入配对码
+# 输入配对码（可见）
 echo -n "请输入 6 位配对码: "
-read -s pair_code
-echo
+read pair_code
 
 # 执行配对
 pair_addr="${target_ip}:${pair_port}"
@@ -57,7 +63,7 @@ exit_code=$?
 
 if [ $exit_code -eq 0 ] && echo "$result" | grep -q "Successfully"; then
   echo "配对成功！"
-  # 使用配置文件中的 IP 和连接端口进行连接
+  # 使用已输入的连接端口进行连接
   connect_addr="${target_ip}:${connect_port}"
   echo "正在连接 ${connect_addr} ..."
   adb connect "$connect_addr"
