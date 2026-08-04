@@ -1,6 +1,6 @@
 #!/bin/bash
 # ===========================================
-# 菜单导航脚本 (fzf) - 修复空选项闪退
+# 菜单导航脚本 (fzf) - 修复空选项闪退 + 根目录退出/返回
 # ===========================================
 chmod +x ./*
 set -euo pipefail
@@ -43,7 +43,8 @@ while true; do
         done < <(echo "$dirs" | sort -r)
     fi
 
-    [ "$current" != "$BASE_DIR" ] && menu+=("❌ 退出")
+    # 始终显示退出键（修复根目录无退出）
+    menu+=("❌ 退出")
 
     # 两者都空时提示
     if [ -z "$dirs" ] && [ -z "$scripts" ]; then
@@ -62,7 +63,12 @@ while true; do
     if [ -z "$choice" ]; then
         [ "$current" != "$BASE_DIR" ] && current=$(dirname "$current") || { echo "再见！"; exit 0; }
     elif [ "$choice" = "🔙 返回" ]; then
-        current=$(dirname "$current")
+        # 修复：根目录按返回直接退出，不再 dirname 越界
+        if [ "$current" = "$BASE_DIR" ]; then
+            echo "再见！"; exit 0
+        else
+            current=$(dirname "$current")
+        fi
     elif [ "$choice" = "❌ 退出" ]; then
         echo "再见！"; exit 0
     elif [[ "$choice" == *.sh ]] || [[ "$choice" == *.py ]]; then
