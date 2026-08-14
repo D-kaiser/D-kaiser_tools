@@ -6,3 +6,4 @@
 更新了krkr的TLG图片解密
 新增Electron引擎（app.asar）的解封包脚本
 用C语言重写了tlg,pimg提取图片，速度嘎嘎快(有点问题)
+加了点AI
